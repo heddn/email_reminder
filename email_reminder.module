@@ -1,0 +1,356 @@
+<?php
+/*
+ * @file email_reminder.module
+* Email reminder module
+*/
+
+/*
+ * Implementation of hook_help().
+*/
+function attention_help($path, $args) {
+  if ($path == 'admin/help#email_reminder') {
+    return t('Reminds site visitors to subscribe to emails');
+  }
+}
+/*
+ * Implements hook_init().
+*/
+function email_reminder_init() {
+  theme('email_reminder_parent');
+}
+
+/*
+ * Implements hook_theme().
+* Registers our theme function.
+*/
+function email_reminder_theme() {
+  return array(
+  	'email_reminder_parent' => array(
+  		'arguments' => array(),
+  ),
+  );
+}
+/*
+ * Theme function that make sure all the css and javascript gets loaded on the front page
+*/
+function theme_email_reminder_parent() {
+  $info = drupal_parse_info_file(email_reminder_module_path() . '/email_reminder.info');
+  if (drupal_is_front_page()) {
+    modalframe_parent_js();
+    drupal_add_js(libraries_get_path('jquery.ui') . '/external/cookie/jquery.cookie.min.js');
+    foreach ($info['scripts'] as $script) {
+      drupal_add_js(email_reminder_module_path() . '/js/' . $script);
+    }
+    // CSS is needed on parent page
+    email_reminder_load_css($info);
+  }
+  // CSS is needed on child page
+  // I would load on the form, but it needs to happen during init
+  if($_GET['q']=="add-email") {
+    email_reminder_load_css($info);
+  }
+}
+
+/*
+ * Implements hook_menu().
+*/
+function email_reminder_menu() {
+  $items = array();
+  $items['add-email'] = array(
+    'title' => t('Sign up for NEPC publication alerts'),
+    'page callback' => 'email_reminder_form',
+    'access arguments' => array('access content'),
+    'description' => t('Subscribe to press releases'),
+    'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+/*
+ * Implements hook_form().
+*/
+function email_reminder_form() {
+  return drupal_get_form('email_reminder');
+}
+
+/*
+ * Email Reminder Form
+*/
+function email_reminder($form_state) {
+  modalframe_child_js();
+
+  // Display on all pages of the form
+  $globalFields['logo'] = array(
+        '#prefix' => '<div class="column1"><div class="image">',
+        '#value' => '<img src="' . email_reminder_module_path() . '/images/nepc-icon.png" alt="NEPC Logo" />',
+        '#suffix' => '</div>'
+  );
+
+  if (!empty($form_state['storage']['step'])) {
+    $function = $form_state['storage']['step'];
+    return array_merge_recursive($globalFields, $function($form_state));
+  }
+  else {
+    return array_merge_recursive($globalFields, email_reminder_form_start());
+  }
+}
+/*
+ * First page of the multi-step form
+*/
+function email_reminder_form_start() {
+  $form = array();
+  $form['description'] = array(
+    '#value' => t('<p>Getting announcements of new NEPC publications as they are released is easy.</p>'),
+    '#suffix' => '</div><div class="column2">'
+  );
+  $form['first_name'] = array(
+   '#type' => 'textfield',
+   '#title' => t('First Name'),
+   '#prefix' => '<div class="subscriber_names">',
+   '#size' => '9',
+   '#maxlength' => 60,
+   '#rules' => array(
+     'length[1, 60]',
+  array('rule' => 'alpha_dash', 'error' => t('Please only use characters [a-zA-Z] at %field.'))
+  ),
+   '#filters' => array('trim')
+  );
+
+  $form['last_name'] = array(
+     '#type' => 'textfield',
+     '#title' => t('Last Name'),
+  	 '#size' => '9',
+     '#maxlength' => 60,
+     '#rules' => array(
+       'length[1, 60]',
+  array('rule' => 'alpha_dash', 'error' => t('Please only use characters [a-zA-Z] at %field.'))
+  ),
+     '#filters' => array('trim')
+  );
+
+  $form['email_address'] = array(
+   '#type' => 'textfield',
+   '#title' => t('Email'),
+   '#prefix' => '</div>',
+   '#size' => '20',
+   '#maxlength' => 60,
+   '#rules' => array(
+     'email',
+     'length[7, 60]'
+  ),
+   '#filters' => array('trim', 'lowercase')
+  );
+  $form['state'] = array(
+    '#type' => 'select',
+    '#options' => email_reminder_states_list(),
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Submit'),
+    '#suffix' => '</div>'
+  );
+
+  // Special values for multi-step form
+  $form['this_step'] = array(
+    '#type' => 'value',
+    '#value' => 'start',
+  );
+  $form['step_next'] = array(
+    '#type' => 'value',
+    '#value' => 'email_reminder_form_confirmation',
+  );
+  $form['step_validate'] = array(
+    '#type' => 'value',
+    '#value' => 'email_reminder_form_start_validation',
+  );
+
+  email_reminder_enable_hints($form);
+
+  return $form;
+}
+/*
+ * Form confirmation page
+*/
+function email_reminder_form_confirmation($form_state) {
+  $form['description'] = array(
+	'#prefix' => '</div><div class="column2">',
+    '#type' => 'item',
+    '#description' => t('<p>Your email address has been successfully added.</p>'),
+  );
+
+  $form['Close'] = array(
+    '#type' => 'submit',
+    '#value' => 'Close',
+    '#suffix' => '</div>'
+  );
+  $form['this_step'] = array(
+    '#type' => 'value',
+    '#value' => 'confirmation',
+  );
+  return $form;
+}
+/**
+ * Validate the form.
+ */
+function email_reminder_validate($form, &$form_state) {
+  if (!empty($form_state['values']['step_validate'])) {
+    $function = $form_state['values']['step_validate'];
+    $function($form, $form_state);
+  }
+}
+
+/*
+ * Start page validator
+*/
+function email_reminder_form_start_validation($form, &$form_state) {
+  $required_fields = array('first_name','last_name','email_address');
+  foreach ($required_fields as $field) {
+    if (empty($form_state['values'][$field])) {
+      form_set_error($field, t('Required: ') . $form[$field]['#title']);
+    }
+  }
+
+  $mail = $form_state['values']['email_address'];
+  if (!empty($mail) && !valid_email_address($mail)) {
+    form_set_error('email_address', 'Your email address -- ' . $mail . ' -- appears malformed');
+  }
+}
+/*
+ * Form submit handler
+*/
+function email_reminder_submit($form, &$form_state) {
+  if (empty($form_state['storage'])) {
+    $form_state['storage'] = array();
+    $form_state['storage']['values'] = array();
+  }
+  // Store submitted form values
+  $this_step = $form_state['values']['this_step'];
+  $form_state['storage']['values'][$this_step] = $form_state['values'];
+  // Set up next step.
+  if (!empty($form_state['values']['step_next'])) {
+    email_reminder_notify(array(user_load('1')), &$form_state);
+    $form_state['storage']['step'] = $form_state['values']['step_next'];
+  } else {
+    // We are at the final page, close the modal dialog
+    modalframe_close_dialog();
+  }
+}
+/*
+ * Notification setup
+*/
+function email_reminder_notify($accounts, &$form_state) {
+  foreach ($accounts as $account) {
+    $params['account'] = $account;
+  }
+  $params['message'] .= t('First Name: ') . $form_state['values']['first_name'];
+  $params['message'] .= t('\nLast Name: ') . $form_state['values']['last_name'];
+  $params['message'] .= t('\nEmail address: ') . $form_state['values']['email_address'];
+  $state = $form_state['values']['state'];
+  if (!is_numeric($state)) {
+    $params['message'] .= t('\nUS State (optional): ') . $state;
+  }
+  drupal_mail('email_reminder', 'notice', $account->mail, user_preferred_language($account), $params);
+  drupal_mail('email_reminder', 'confirmation', $form_state['values']['email_address'], language_default(), $params);
+}
+/*
+ * Implements hook_mail
+*/
+function email_reminder_mail($key, &$message, $params) {
+  $language = $message['language'];
+  $variables = user_mail_tokens($params['account'], $language);
+  switch($key) {
+    case 'notice':
+      // Compose the body:
+      $msg[] = t('The following individual has requested to be signed up for email newsletters:\n\n');
+      $msg[] .= $params['message'];
+
+      // Tidy up the body:
+      foreach ($msg as $index_key => $value) {
+        $msg[$index_key] = wordwrap($value);
+      }
+
+      // Prepare the email:
+      $message['subject'] = t('Email subscription request from: !site', $variables, $language->language);
+      $message['body'] = implode("\n\n", $msg);
+      break;
+  }
+}
+/*
+ * Return all 50 US States
+*/
+function email_reminder_states_list() {
+  return array(
+    '-- State -- (optional)',
+  	'AL'=>"Alabama",
+    'AK'=>"Alaska", 
+    'AZ'=>"Arizona", 
+    'AR'=>"Arkansas", 
+    'CA'=>"California", 
+    'CO'=>"Colorado", 
+    'CT'=>"Connecticut", 
+    'DE'=>"Delaware", 
+    'DC'=>"District Of Columbia", 
+    'FL'=>"Florida", 
+    'GA'=>"Georgia", 
+    'HI'=>"Hawaii", 
+    'ID'=>"Idaho", 
+    'IL'=>"Illinois", 
+    'IN'=>"Indiana", 
+    'IA'=>"Iowa", 
+    'KS'=>"Kansas", 
+    'KY'=>"Kentucky", 
+    'LA'=>"Louisiana", 
+    'ME'=>"Maine", 
+    'MD'=>"Maryland", 
+    'MA'=>"Massachusetts", 
+    'MI'=>"Michigan", 
+    'MN'=>"Minnesota", 
+    'MS'=>"Mississippi", 
+    'MO'=>"Missouri", 
+    'MT'=>"Montana",
+    'NE'=>"Nebraska",
+    'NV'=>"Nevada",
+    'NH'=>"New Hampshire",
+    'NJ'=>"New Jersey",
+    'NM'=>"New Mexico",
+    'NY'=>"New York",
+    'NC'=>"North Carolina",
+    'ND'=>"North Dakota",
+    'OH'=>"Ohio", 
+    'OK'=>"Oklahoma", 
+    'OR'=>"Oregon", 
+    'PA'=>"Pennsylvania", 
+    'RI'=>"Rhode Island", 
+    'SC'=>"South Carolina", 
+    'SD'=>"South Dakota",
+    'TN'=>"Tennessee", 
+    'TX'=>"Texas", 
+    'UT'=>"Utah", 
+    'VT'=>"Vermont", 
+    'VA'=>"Virginia", 
+    'WA'=>"Washington", 
+    'WV'=>"West Virginia", 
+    'WI'=>"Wisconsin", 
+    'WY'=>"Wyoming",
+  );
+}
+
+/*
+ * Enable hints on the form fields
+*/
+function email_reminder_enable_hints(&$form) {
+  hint_set_hint($form['first_name']);
+  hint_set_hint($form['last_name']);
+  hint_set_hint($form['email_address']);
+}
+
+function email_reminder_module_path(){
+  return drupal_get_path('module', 'email_reminder');
+}
+
+function email_reminder_load_css($info = array()){
+  foreach ($info['css'] as $css) {
+    drupal_add_css(email_reminder_module_path() . '/css/' . $css, 'module', 'all', false);
+  }
+}

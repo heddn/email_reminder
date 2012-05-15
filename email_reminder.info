@@ -1,0 +1,13 @@
+name = Email Reminder
+description = Lightbox reminder to update your email
+package = Other
+dependencies[] = jquery_update
+dependencies[] = jquery_ui
+dependencies[] = libraries
+dependencies[] = fapi_validation
+dependencies[] = hint
+dependencies[] = modalframe
+version = "6.x-1.0"
+core = "6.x"
+scripts[] = email_reminder.js
+css[] = email_reminder.css

@@ -9,7 +9,7 @@ INTRODUCTION
 ------------
 
 Author:
-* Lucas Hedding (lucashedding)
+* Lucas Hedding (heddn)
 
 This module reminds site visitors to subscribe to emails
 
